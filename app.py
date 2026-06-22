@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-ЦЕННОСТНЫЙ АНАЛИЗАТОР ТЕКСТА — Streamlit Edition (v2.0)
+ЦЕННОСТНЫЙ АНАЛИЗАТОР ТЕКСТА — Streamlit Edition (v2.1)
 =========================================================
 Анализ ценностной плотности текста на основе ассоциативного словаря.
 Только ценности (позитивные) и антиценности (негативные).
-Нейтральные категории исключены.
+Плотность рассчитывается как доля уникальных ценностно-маркированных слов.
 """
 
 import streamlit as st
@@ -19,12 +19,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ============================================================
-# 1. ВСТРОЕННЫЕ ДАННЫЕ (values_associations.xlsx)
+# 1. ВСТРОЕННЫЕ ДАННЫЕ
 # ============================================================
-# Нейтральные ценности (Безопасность, Власть, Законность) удалены.
-# Для Безработицы, Корысти, Надежды, Образования, Смысла жизни и Творчества
-# использованы обновлённые списки слов-репрезентантов.
-
 VALUES_DATA = {
     "Агрессия": ["злость","война","ненависть","страх","боль","злоба","гнев","драка","жестокость","конфликт","ссора","ярость","враждебность","обида","сила","удар","ужас","защита","зло","красный","крик","насилие","раздражение","зависть","кровь","неадекватность","фашизм","шум","власть","враг","вражда","глупость","крики","нападение","смерть","убийство","угроза","Америка","американец","безбашенность","безысходность","битвы","бои","бойцовский клуб","боязнь","бык","вспыльчивость","голубки","грусть","дагестанцы","дорога","драки","жёлчь","зубы","игры","Кирилл","кулаки","люди","Майдан","машина","мрак","недовольство","неконтролируемое","нервозность","нервы","нетерпимость","неудовлетворённость","оголтелость","оскал","печаль","плохо","против","разобщённость","разрушение","ругань","скупость","стресс","террор","толпа","Украина","универ","уничтожение","хаос","хачи","хищник","хохлы","человек","чурки","эмоции"],
     "Бедность": ["нищета","голод","деньги","бомж","холод","Африка","безработица","недостаток","жалость","не порок","Россия","слабость","боль","пустота","болезнь","грязь","Индия","лохмотья","нищий","безденежье","безысходность","грусть","дети","люди","несчастье","нехватка","нужда","обида","ограничение","одиночество","скудость","слёзы","улица","бездомные","доброта","еда","зависть","метро","помощь","порок","скупость","смерть","трудность","тяжесть","хлеб","банкротство","бедность","безвыходность","бледность лица","бульон","ветераны","военные","война","глупость","голодный","детский дом","дно","Достоевский","каморка","копейка","корыто","крайность","монета","муки","надежда","необразованность","неразвитость","несостоятельность","несчастный","неустойчивость","оборванец","обочина","ограниченность","оскорбление","отсутствие еды","отчаяние","очищение","плохое жильё","подать","подаяния","попрошайка","Прага","проблемы","простота","серость","спасение","студенты","студенчество","тряпки","тупость","Украина","унижение","униженность"],
@@ -99,7 +95,7 @@ VALUES_DATA = {
 }
 
 # ============================================================
-# 2. КЛАССИФИКАЦИЯ: ТОЛЬКО ЦЕННОСТИ vs АНТИЦЕННОСТИ
+# 2. КЛАССИФИКАЦИЯ
 # ============================================================
 POSITIVE_VALUES = [
     'Вера', 'Доверие', 'Долг', 'Достаток', 'Дружба', 'Здоровье',
@@ -120,7 +116,6 @@ NEGATIVE_VALUES = [
     'Хамство', 'Непрофессионализм', 'Неудача'
 ]
 
-# Оставляем только те, что реально присутствуют в словаре
 POSITIVE_VALUES = [v for v in POSITIVE_VALUES if v in VALUES_DATA]
 NEGATIVE_VALUES = [v for v in NEGATIVE_VALUES if v in VALUES_DATA]
 
@@ -145,7 +140,7 @@ def lemmatize_text(text):
     return tokens, lemmas, lemma_to_tokens
 
 # ============================================================
-# 4. ОСНОВНАЯ ФУНКЦИЯ АНАЛИЗА (только ценности и антиценности)
+# 4. АНАЛИЗ (плотность по уникальным словам)
 # ============================================================
 def analyze_text(text):
     tokens, lemmas, lemma_to_tokens = lemmatize_text(text)
@@ -153,33 +148,44 @@ def analyze_text(text):
     if N_total == 0:
         return None, "Текст не содержит слов для анализа"
     
-    # Обратный индекс: лемма -> список ценностей
+    # Обратный индекс лемма -> список ценностей
     lemma_to_values = defaultdict(list)
     for value, words in VALUES_DATA.items():
         for w in words:
             w_lemma = morph.normal_forms(w.lower())[0]
             lemma_to_values[w_lemma].append(value)
     
-    # Подсчёт
+    # Множества для уникальных маркированных слов
+    marked_indices = set()
+    pos_indices = set()
+    neg_indices = set()
+    
     activated_values = Counter()
     value_lemmas_in_text = {}
     hits_positions = []
     
     for pos, lemma in enumerate(lemmas):
         if lemma in lemma_to_values:
-            for value in lemma_to_values[lemma]:
+            marked_indices.add(pos)
+            vals = lemma_to_values[lemma]
+            is_pos = any(v in POSITIVE_VALUES for v in vals)
+            is_neg = any(v in NEGATIVE_VALUES for v in vals)
+            if is_pos:
+                pos_indices.add(pos)
+            if is_neg:
+                neg_indices.add(pos)
+            for value in vals:
                 activated_values[value] += 1
                 if value not in value_lemmas_in_text:
                     value_lemmas_in_text[value] = []
                 value_lemmas_in_text[value].append(lemma)
                 hits_positions.append((pos, lemma, value))
     
-    # Только позитивные и негативные
-    N_pos = sum(activated_values[v] for v in POSITIVE_VALUES if v in activated_values)
-    N_neg = sum(activated_values[v] for v in NEGATIVE_VALUES if v in activated_values)
-    N_val_total = N_pos + N_neg
+    N_val_total = len(marked_indices)
+    N_pos = len(pos_indices)
+    N_neg = len(neg_indices)
     
-    # ПЛОТНОСТИ В ПРОЦЕНТАХ
+    # Плотности (уникальные слова / N_total)
     VD = (N_val_total / N_total) * 100 if N_total > 0 else 0
     VD_pos = (N_pos / N_total) * 100 if N_total > 0 else 0
     VD_neg = (N_neg / N_total) * 100 if N_total > 0 else 0
@@ -215,7 +221,7 @@ def analyze_text(text):
     return results, None
 
 # ============================================================
-# 5. ЦВЕТНАЯ МАРКИРОВКА ТЕКСТА
+# 5. ЦВЕТНАЯ МАРКИРОВКА
 # ============================================================
 def colorize_text(text, results):
     tokens = results['tokens']
@@ -273,7 +279,6 @@ def colorize_text(text, results):
 def plot_main_dashboard(results):
     activated = results['activated_values']
     
-    # График 1: Gauge для баланса
     fig_gauge = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=results['VB'],
@@ -301,7 +306,6 @@ def plot_main_dashboard(results):
     ))
     fig_gauge.update_layout(height=300)
     
-    # График 2: Структура (только позитивные и негативные)
     fig_pie = go.Figure(data=[go.Pie(
         labels=['Позитивные (ценности)', 'Негативные (антиценности)'],
         values=[results['N_pos'], results['N_neg']],
@@ -317,7 +321,6 @@ def plot_main_dashboard(results):
                          x=0.5, y=0.5, font_size=16, showarrow=False)]
     )
     
-    # График 3: Плотности (без нейтральной)
     fig_bar = go.Figure(data=[
         go.Bar(
             name='Плотность (%)',
@@ -336,17 +339,11 @@ def plot_main_dashboard(results):
         yaxis_range=[0, max(results['VD']*1.3, 10)]
     )
     
-    # График 4: Топ-15 активированных ценностей
     top_15 = activated.most_common(15)
     if top_15:
         names = [x[0] for x in top_15]
         counts = [x[1] for x in top_15]
-        colors = []
-        for v in names:
-            if v in POSITIVE_VALUES:
-                colors.append('#4CAF50')
-            else:
-                colors.append('#F44336')
+        colors = ['#4CAF50' if v in POSITIVE_VALUES else '#F44336' for v in names]
         
         fig_top = go.Figure(data=[
             go.Bar(
@@ -360,7 +357,7 @@ def plot_main_dashboard(results):
         ])
         fig_top.update_layout(
             title='Топ-15 активированных ценностей',
-            xaxis_title='Количество слов-репрезентантов',
+            xaxis_title='Количество активаций',
             height=500,
             showlegend=False
         )
@@ -371,7 +368,6 @@ def plot_main_dashboard(results):
     return fig_gauge, fig_pie, fig_bar, fig_top
 
 def plot_category_breakdown(results):
-    """Детализация по категориям (только позитивные и негативные)"""
     activated = results['activated_values']
     
     pos_data = {v: activated[v] for v in POSITIVE_VALUES if v in activated}
@@ -408,14 +404,13 @@ st.set_page_config(page_title="Ценностный анализ текста", 
 st.title("📊 Ценностный анализ текста")
 st.markdown("""
 **Анализ ценностной плотности текста** на основе ассоциативного словаря ценностей русской культуры (ИЛИ РАН).  
-Учитываются только **ценности** (позитивные) и **антиценности** (негативные). Нейтральные категории исключены.
+Учитываются только **ценности** (позитивные) и **антиценности** (негативные).  
+**Плотность** рассчитывается как доля **уникальных** ценностно-маркированных слов.
 """)
 
-# Создаём вкладки: Анализ и Формулы
 tab_analysis, tab_formulas = st.tabs(["📊 Анализ", "📐 Методология и формулы"])
 
 with tab_analysis:
-    # Ввод текста
     text_input = st.text_area(
         "✍️ Введите текст для анализа:",
         height=200,
@@ -433,28 +428,19 @@ with tab_analysis:
         if error:
             st.error(error)
         else:
-            # === КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ ===
             st.subheader("📈 Ключевые показатели")
             
             col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Ценностная плотность (VD)", f"{results['VD']:.2f}%")
-            with col2:
-                st.metric("Позитивная (VD⁺)", f"{results['VD_pos']:.2f}%")
-            with col3:
-                st.metric("Негативная (VD⁻)", f"{results['VD_neg']:.2f}%")
-            with col4:
-                st.metric("Индекс баланса (VB)", f"{results['VB']:+.3f}")
+            col1.metric("Ценностная плотность (VD)", f"{results['VD']:.2f}%")
+            col2.metric("Позитивная (VD⁺)", f"{results['VD_pos']:.2f}%")
+            col3.metric("Негативная (VD⁻)", f"{results['VD_neg']:.2f}%")
+            col4.metric("Индекс баланса (VB)", f"{results['VB']:+.3f}")
             
             col5, col6 = st.columns(2)
-            with col5:
-                st.metric("Разнообразие", f"{results['richness']:.1%}")
-            with col6:
-                st.metric("Активировано ценностей", f"{results['K_activated']} из {results['K_total']}")
+            col5.metric("Разнообразие", f"{results['richness']:.1%}")
+            col6.metric("Активировано ценностей", f"{results['K_activated']} из {results['K_total']}")
             
-            # === ЦВЕТНАЯ МАРКИРОВКА ТЕКСТА ===
             st.subheader("🎨 Текст с цветовой маркировкой")
-            
             colored_html, value_colors = colorize_text(text_input, results)
             
             if results['activated_values']:
@@ -464,7 +450,6 @@ with tab_analysis:
                     unsafe_allow_html=True
                 )
                 
-                # Легенда
                 st.markdown("#### 🏷️ Легенда цветов:")
                 legend_cols = st.columns(4)
                 for i, (val, color) in enumerate(value_colors.items()):
@@ -479,27 +464,22 @@ with tab_analysis:
             else:
                 st.info("В тексте не обнаружено ценностно-маркированных слов.")
             
-            # === ГРАФИКИ ===
             st.subheader("📊 Визуализация")
-            
             fig_gauge, fig_pie, fig_bar, fig_top = plot_main_dashboard(results)
             
             tab_graphs, tab_detail = st.tabs(["📉 Основные графики", "📋 Детализация"])
             
             with tab_graphs:
                 col_left, col_right = st.columns(2)
-                with col_left:
-                    st.plotly_chart(fig_gauge, use_container_width=True)
-                    st.plotly_chart(fig_pie, use_container_width=True)
-                with col_right:
-                    st.plotly_chart(fig_bar, use_container_width=True)
-                    st.plotly_chart(fig_top, use_container_width=True)
+                col_left.plotly_chart(fig_gauge, use_container_width=True)
+                col_left.plotly_chart(fig_pie, use_container_width=True)
+                col_right.plotly_chart(fig_bar, use_container_width=True)
+                col_right.plotly_chart(fig_top, use_container_width=True)
             
             with tab_detail:
                 fig_cat = plot_category_breakdown(results)
                 st.plotly_chart(fig_cat, use_container_width=True)
             
-            # === ИТОГОВАЯ ВЫДАЧА СЛОВ ПО ЦЕННОСТЯМ ===
             st.subheader("📝 Итоговая выдача слов по ценностям")
             
             if results['activated_values']:
@@ -519,7 +499,7 @@ with tab_analysis:
                             lemmas_list = results['value_lemmas_in_text'][val]
                             unique_lemmas = sorted(set(lemmas_list))
                             
-                            with st.expander(f"**{val}** — {count} слов ({', '.join(unique_lemmas[:10])}{'...' if len(unique_lemmas) > 10 else ''})"):
+                            with st.expander(f"**{val}** — {count} активаций ({', '.join(unique_lemmas[:10])}{'...' if len(unique_lemmas) > 10 else ''})"):
                                 st.write(f"**Слова из текста, репрезентирующие ценность «{val}»:**")
                                 st.write(", ".join(unique_lemmas))
                                 
@@ -528,12 +508,10 @@ with tab_analysis:
                                         'Категория': category_name,
                                         'Ценность': val,
                                         'Слово_из_текста': lemma,
-                                        'Количество_вхождений_ценности': count
+                                        'Количество_активаций_ценности': count
                                     })
                 
-                # === СКАЧИВАНИЕ РЕЗУЛЬТАТОВ ===
                 st.subheader("💾 Скачать результаты")
-                
                 col_dl1, col_dl2, col_dl3 = st.columns(3)
                 
                 with col_dl1:
@@ -553,7 +531,7 @@ with tab_analysis:
                         summary = pd.DataFrame([
                             {'Показатель': 'Длина текста (слов)', 'Значение': results['N_total']},
                             {'Показатель': 'Уникальных лемм', 'Значение': results['N_unique_lemmas']},
-                            {'Показатель': 'Ценностно-маркированных слов', 'Значение': results['N_val_total']},
+                            {'Показатель': 'Ценностно-маркированных слов (уник.)', 'Значение': results['N_val_total']},
                             {'Показатель': 'VD (общая, %)', 'Значение': f"{results['VD']:.3f}"},
                             {'Показатель': 'VD⁺ (позитивная, %)', 'Значение': f"{results['VD_pos']:.3f}"},
                             {'Показатель': 'VD⁻ (негативная, %)', 'Значение': f"{results['VD_neg']:.3f}"},
@@ -586,7 +564,7 @@ with tab_analysis:
 ОСНОВНЫЕ ПОКАЗАТЕЛИ:
 - Длина текста: {results['N_total']} слов
 - Уникальных лемм: {results['N_unique_lemmas']}
-- Ценностно-маркированных слов: {results['N_val_total']}
+- Ценностно-маркированных слов (уник.): {results['N_val_total']}
 
 ПЛОТНОСТИ (%):
 - Общая VD: {results['VD']:.3f}%
@@ -612,7 +590,6 @@ with tab_analysis:
                         use_container_width=True
                     )
             
-            # === ДЕТАЛЬНАЯ СТАТИСТИКА ===
             with st.expander("📋 Подробная статистика"):
                 st.write(f"**Длина текста:** {results['N_total']} слов")
                 st.write(f"**Уникальных лемм:** {results['N_unique_lemmas']}")
@@ -639,32 +616,33 @@ with tab_formulas:
     st.header("📐 Методология и формулы расчёта")
     st.markdown("""
     ### 1. Исходные данные
-    - **Словарь ценностей** содержит списки слов-репрезентантов для 60 ценностей/антиценностей русской культуры, полученных в ассоциативном эксперименте (ИЛИ РАН).
-    - Все ценности разделены на **позитивные** (33) и **негативные** (27). Нейтральные категории исключены.
-    - Каждое слово входного текста приводится к лемме (нормальной форме) с помощью морфологического анализатора `pymorphy3`.
+    - **Словарь** содержит списки слов-репрезентантов для ценностей/антиценностей русской культуры.
+    - Все ценности разделены на **позитивные** и **негативные** (нейтральные исключены).
+    - Каждое слово входного текста лемматизируется с помощью `pymorphy3`.
 
     ### 2. Основные величины
     Пусть:
-    - $N_{total}$ — общее количество слов (токенов) в тексте.
-    - $N_{pos}$ — количество слов, леммы которых входят в словарь позитивных ценностей.
-    - $N_{neg}$ — количество слов, леммы которых входят в словарь негативных ценностей.
-    - $N_{val} = N_{pos} + N_{neg}$ — общее количество ценностно-маркированных слов.
-    - $K_{total}$ — общее число ценностей в словаре (60).
-    - $K_{activated}$ — число ценностей, которые были активированы хотя бы одним словом текста.
+    - $N_{total}$ — общее количество слов в тексте.
+    - $M$ — множество позиций (индексов) слов, леммы которых входят хотя бы в одну ценность словаря.
+    - $M^+$ — подмножество $M$, где слово отнесено хотя бы к одной **позитивной** ценности.
+    - $M^-$ — подмножество $M$, где слово отнесено хотя бы к одной **негативной** ценности.
+    - $N_{val} = |M|$ — количество **уникальных** ценностно-маркированных слов.
+    - $N_{pos} = |M^+|$, $N_{neg} = |M^-|$.
+    - $K_{total}$ — общее число ценностей в словаре.
+    - $K_{activated}$ — число ценностей, активированных хотя бы одним словом.
 
     ### 3. Формулы
     #### 3.1. Ценностная плотность (Value Density)
     $$
     VD = \\frac{N_{val}}{N_{total}} \\times 100\\%
     $$
-    Показывает долю слов текста, несущих ценностную нагрузку.
 
     #### 3.2. Плотность позитивных ценностей
     $$
     VD^{+} = \\frac{N_{pos}}{N_{total}} \\times 100\\%
     $$
 
-    #### 3.3. Плотность негативных ценностей (антиценностей)
+    #### 3.3. Плотность негативных ценностей
     $$
     VD^{-} = \\frac{N_{neg}}{N_{total}} \\times 100\\%
     $$
@@ -674,28 +652,20 @@ with tab_formulas:
     VB = \\frac{N_{pos} - N_{neg}}{N_{pos} + N_{neg}}, \\quad \\text{если } N_{pos}+N_{neg} > 0
     $$
     При $N_{pos}+N_{neg} = 0$ принимается $VB = 0$.  
-    Значения лежат в диапазоне $[-1, 1]$:
-    - $VB > 0$ — преобладают позитивные ценности,
-    - $VB < 0$ — преобладают негативные,
-    - $VB = 0$ — равновесие или отсутствие маркированных слов.
+    Диапазон значений: $[-1, 1]$.
 
     #### 3.5. Коэффициент разнообразия (Richness)
     $$
     R = \\frac{K_{activated}}{K_{total}}
     $$
-    Отражает, какая доля от общего числа ценностей словаря была активирована в тексте.
 
     ### 4. Интерпретация
-    - Высокая общая плотность $VD$ говорит о насыщенности текста ценностно-значимой лексикой.
-    - Соотношение $VD^{+}$ и $VD^{-}$ и индекс $VB$ позволяют судить о ценностной окраске (позитивной, негативной, смешанной).
-    - Коэффициент $R$ характеризует широту ценностного спектра текста.
+    - Все плотности гарантированно лежат в диапазоне от 0% до 100%.
+    - $VD$ показывает долю слов, несущих ценностную окраску.
+    - $VB > 0$ — преобладают позитивные ценности, $VB < 0$ — негативные.
+    - $R$ отражает, насколько широко охвачен ценностный спектр.
     """)
 
-# Футер
 st.markdown("---")
 st.markdown("""
-<div style='text-align:center;color:gray;font-size:12px;'>
-Основано на ассоциативном словаре ценностей русской культуры (ИЛИ РАН)<br>
-Лемматизация: pymorphy3 | Визуализация: Plotly
-</div>
-""", unsafe_allow_html=True)
+<div style='text-align:center;
