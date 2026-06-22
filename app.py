@@ -696,6 +696,6 @@ st.markdown("---")
 st.markdown("""
 <div style='text-align:center;color:gray;font-size:12px;'>
 Основано на ассоциативном словаре ценностей русской культуры (ИЛИ РАН)<br>
-Лемматизация: pymorphy3 | Визуализация: Plotly | Нейтральные категории исключены
+Лемматизация: pymorphy3 | Визуализация: Plotly
 </div>
 """, unsafe_allow_html=True)
