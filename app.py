@@ -763,7 +763,7 @@ with tab_formulas:
 st.markdown("---")
 st.markdown("""
 <div style='text-align:center;color:gray;font-size:12px;'>
-💡 Основано на ассоциативном словаре ценностей русской культуры (ИЛИ РАН)<br>
+💡 Основано на словаре «Базовые ценности носителей русской культуры» (Институт языкознания РАН)<br>
 Лемматизация: pymorphy3 | Визуализация: Plotly
 </div>
 """, unsafe_allow_html=True)
